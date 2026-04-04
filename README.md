@@ -1,47 +1,72 @@
-# Ulanzi Studio Plugin Development Skill
+# Ulanzi Studio Plugin Development - AI Context
 
-A [Claude Code](https://claude.com/claude-code) skill for building Ulanzi Studio plugins (D200H / D200 / D200X stream controllers).
+[한국어](docs/README.ko.md) | **English** | [中文](docs/README.zh.md) | [日本語](docs/README.ja.md)
+
+AI context file for building Ulanzi Studio plugins (D200H / D200 / D200X stream controllers).
 
 ## What is this?
 
-This is a **skill file** for Claude Code. When installed, Claude Code gains the knowledge to build Ulanzi Studio plugins from scratch - including plugin structure, SDK API, Canvas rendering, Property Inspector UI, localization, and platform constraints (CORS, font loading, etc.).
+`SKILL.md` is a comprehensive Ulanzi Studio plugin development reference that works as:
 
-## Install
+- **AI context** for any AI coding assistant
+- **Developer guide** for humans building plugins manually
 
-### For Claude Code users
+When loaded into an AI assistant, it can generate complete, installable Ulanzi plugins from a single prompt.
 
-Copy `SKILL.md` to your Claude Code skills directory:
+## Install for AI Assistants
+
+### Claude Code
 
 ```bash
-# Global (all projects)
 mkdir -p ~/.claude/skills
 cp SKILL.md ~/.claude/skills/ulanzi-studio.md
-
-# Or project-level
-mkdir -p .claude/skills
-cp SKILL.md .claude/skills/ulanzi-studio.md
 ```
 
-### Manual reference
+### Cursor
 
-You can also read `SKILL.md` directly as a comprehensive Ulanzi Studio plugin development guide.
+```bash
+cp .cursorrules /path/to/your/project/.cursorrules
+```
+
+Or add to Cursor Settings > Rules > User Rules.
+
+### GitHub Copilot
+
+```bash
+mkdir -p /path/to/your/project/.github
+cp .github/copilot-instructions.md /path/to/your/project/.github/copilot-instructions.md
+```
+
+### Windsurf
+
+```bash
+cp .windsurfrules /path/to/your/project/.windsurfrules
+```
+
+### Cline
+
+```bash
+cp .clinerules /path/to/your/project/.clinerules
+```
+
+### Other AI Tools
+
+Paste the contents of `SKILL.md` into your AI assistant's system prompt or context window.
 
 ## What it covers
 
-- Plugin directory structure and manifest.json schema
+- Plugin directory structure and `manifest.json` schema
 - Full SDK API reference (`$UD` object - all methods and events)
 - Plugin main service pattern (action lifecycle management)
 - Action class pattern (Canvas rendering, icon updates)
 - Property Inspector pattern (settings UI with form sync)
 - CORS constraints (which APIs work in the WebView, which don't)
 - Font loading fix (async font await before Canvas draw)
-- Localization setup (multi-language support)
-- Debugging tips (remote debug, simulator)
-- Device specs (D200H, D200, D200X, Dial)
+- Localization, debugging, device specs
 
-## Example prompt
+## Example prompts
 
-After installing this skill, you can ask Claude Code:
+After installing, ask your AI assistant:
 
 > "Ulanzi D200H에 현재 시간을 표시하는 플러그인 만들어줘"
 
@@ -49,7 +74,7 @@ After installing this skill, you can ask Claude Code:
 
 > "Build an Ulanzi D200H plugin with a countdown timer"
 
-Claude Code will generate a complete, installable plugin with all required files.
+> "Ulanzi D200Hのキーに天気を表示するプラグインを作って"
 
 ## Based on
 

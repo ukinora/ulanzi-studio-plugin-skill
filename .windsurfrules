@@ -1,0 +1,442 @@
+# Windsurf Rules - Ulanzi Studio Plugin Development
+# Load this file as .windsurfrules in your project root.
+# Reference: https://github.com/ukinora/ulanzi-studio-plugin-skill
+
+# Ulanzi Studio Plugin Development
+
+Build plugins for Ulanzi D200H / D200 / D200X stream controllers using the Ulanzi Studio SDK.
+
+TRIGGER when: user asks to create a Ulanzi Studio plugin/app, build a stream deck action, or modify an existing Ulanzi plugin.
+
+## Plugin Architecture
+
+Two runtime modes (choose one per plugin):
+
+| Mode | Entry Point | Use Case |
+|------|------------|----------|
+| **HTML** | `plugin/app.html` | Canvas drawing, UI-driven, simpler setup |
+| **Node.js** | `plugin/app.js` | System access, file I/O, complex logic |
+
+## Directory Structure
+
+```
+com.ulanzi.{name}.ulanziPlugin/
+  manifest.json                      # Plugin metadata (REQUIRED)
+  plugin/
+    app.html                         # Entry point (HTML mode)
+    app.js                           # Main logic
+    actions/
+      {action}.js                    # Action class
+  property-inspector/
+    config/
+      inspector.html                 # Settings UI
+      inspector.js                   # Settings logic
+  libs/
+    js/
+      constants.js                   # Event constants
+      eventEmitter.js                # Pub/sub system
+      timers.js                      # Web Worker timers
+      utils.js                       # Utilities (fetch, form, canvas)
+      ulanzideckApi.js               # SDK API ($UD object)
+    css/
+      udpi.css                       # Property Inspector styling
+    assets/                          # UI icons (svg)
+  assets/
+    icons/
+      icon.png                       # Plugin icon (72x72)
+      categoryIcon.png               # Category icon (72x72)
+      actionDefaultImage.png         # Default key image (196x196)
+  en.json                            # English localization
+  ko_KR.json                         # Korean localization
+  zh_CN.json                         # Chinese localization
+```
+
+## manifest.json Schema
+
+```json
+{
+  "Version": "1.0.0",
+  "Author": "AuthorName",
+  "Name": "Plugin Name",
+  "Description": "Short description",
+  "Icon": "assets/icons/icon.png",
+  "Category": "Category Name",
+  "CategoryIcon": "assets/icons/categoryIcon.png",
+  "CodePath": "plugin/app.html",
+  "Type": "JavaScript",
+  "SupportedInMultiActions": false,
+  "PrivateAPI": true,
+  "UUID": "com.ulanzi.ulanzideck.{pluginName}",
+  "Actions": [
+    {
+      "Name": "Action Name",
+      "Icon": "assets/icons/icon.png",
+      "PropertyInspectorPath": "property-inspector/config/inspector.html",
+      "state": 0,
+      "States": [
+        { "Image": "assets/icons/actionDefaultImage.png" }
+      ],
+      "Tooltip": "Action tooltip",
+      "UUID": "com.ulanzi.ulanzideck.{pluginName}.{actionName}",
+      "SupportedInMultiActions": false
+    }
+  ],
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "mac", "MinimumVersion": "10.11" }
+  ],
+  "Software": { "MinimumVersion": "6.1" }
+}
+```
+
+**UUID rules:**
+- Plugin UUID: 4 dot-separated segments (`com.ulanzi.ulanzideck.myPlugin`)
+- Action UUID: 5+ segments (`com.ulanzi.ulanzideck.myPlugin.myAction`)
+
+## SDK API Reference ($UD)
+
+### Connection
+
+```javascript
+$UD.connect('com.ulanzi.ulanzideck.myPlugin')  // Plugin main service
+$UD.connect('com.ulanzi.ulanzideck.myPlugin.myAction')  // Property inspector
+```
+
+### Event Handlers
+
+| Method | Fires When | Callback Data |
+|--------|-----------|---------------|
+| `onConnected(fn)` | WebSocket connected | `{}` |
+| `onAdd(fn)` | Action added to key | `{ context, param }` |
+| `onRun(fn)` | Key pressed | `{ context }` |
+| `onSetActive(fn)` | Action becomes visible | `{ context, active }` |
+| `onClear(fn)` | Action removed | `{ param: [{ context }] }` |
+| `onParamFromApp(fn)` | Settings received from app | `{ context, param }` |
+| `onParamFromPlugin(fn)` | Settings received from PI | `{ context, param }` |
+| `onClose(fn)` | Connection closed | `{}` |
+| `onError(fn)` | WebSocket error | error string |
+| `onSelectdialog(fn)` | File/folder dialog result | selection result |
+
+### Icon Methods
+
+```javascript
+// Base64 canvas image (most common for dynamic content)
+$UD.setBaseDataIcon(context, base64DataUrl, optionalText)
+
+// Predefined state from manifest States array
+$UD.setStateIcon(context, stateIndex, optionalText)
+
+// Local image file path
+$UD.setPathIcon(context, './assets/icons/myIcon.png', optionalText)
+
+// Animated GIF (base64 or path)
+$UD.setGifDataIcon(context, base64GifData, optionalText)
+$UD.setGifPathIcon(context, './assets/myAnim.gif', optionalText)
+```
+
+### Settings & Communication
+
+```javascript
+// Send settings to main app (from Property Inspector)
+$UD.sendParamFromPlugin(settingsObject, optionalContext)
+
+// UI helpers
+$UD.toast('Notification message')
+$UD.openUrl('https://example.com')
+$UD.openView('./popup.html', 300, 200)
+$UD.selectFileDialog('image(*.jpg *.png)')
+$UD.selectFolderDialog()
+
+// Localization
+$UD.t('keyName')  // Returns translated string
+```
+
+## Plugin Main Service Pattern (app.js)
+
+```javascript
+const ACTION_CACHES = {}
+$UD.connect('com.ulanzi.ulanzideck.{pluginName}')
+$UD.onConnected(conn => {})
+
+$UD.onAdd(jsn => {
+  const context = jsn.context
+  if (!ACTION_CACHES[context]) {
+    ACTION_CACHES[context] = new MyAction(context)
+    onSetSettings(jsn)
+  } else {
+    ACTION_CACHES[context].add()
+  }
+})
+
+$UD.onSetActive(jsn => {
+  const instance = ACTION_CACHES[jsn.context]
+  if (instance) instance.setActive(jsn.active)
+})
+
+$UD.onRun(jsn => {
+  const instance = ACTION_CACHES[jsn.context]
+  if (!instance) $UD.emit('add', jsn)
+  else instance.run()
+})
+
+$UD.onClear(jsn => {
+  if (jsn.param) {
+    jsn.param.forEach(item => {
+      if (ACTION_CACHES[item.context]) {
+        ACTION_CACHES[item.context].clear()
+        delete ACTION_CACHES[item.context]
+      }
+    })
+  }
+})
+
+$UD.onParamFromApp(jsn => onSetSettings(jsn))
+$UD.onParamFromPlugin(jsn => onSetSettings(jsn))
+
+function onSetSettings(jsn) {
+  const settings = jsn.param || {}
+  const instance = ACTION_CACHES[jsn.context]
+  if (!settings || !instance || JSON.stringify(settings) === '{}') return
+  if (typeof instance.setParams === 'function') instance.setParams(settings)
+}
+```
+
+## Action Class Pattern
+
+```javascript
+class MyAction {
+  constructor(context) {
+    this.context = context
+    this.lastIcon = ''
+    this.allowSend = true
+    this.settings = { /* defaults */ }
+    this.fontReady = false
+
+    // Wait for font before first render
+    this.loadFont().then(() => {
+      this.fontReady = true
+      this.run()
+    })
+  }
+
+  loadFont() {
+    return document.fonts.ready.then(() => {
+      var c = document.createElement('canvas')
+      c.width = 1; c.height = 1
+      var ctx = c.getContext('2d')
+      ctx.font = '10px "Source Han Sans"'
+      ctx.fillText('.', 0, 0)
+      return document.fonts.ready
+    })
+  }
+
+  run() { /* start timers, fetch data */ }
+
+  async createIcon(text) {
+    if (!this.fontReady) await this.loadFont()
+    const canvas = document.createElement('canvas')
+    const size = 196  // D200H LCD key size
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+
+    // Draw background
+    ctx.fillStyle = '#1a1a2e'
+    ctx.fillRect(0, 0, size, size)
+
+    // Draw text
+    ctx.fillStyle = '#ffffff'
+    ctx.font = 'bold 32px "Source Han Sans"'
+    ctx.textBaseline = 'middle'
+    ctx.textAlign = 'center'
+    ctx.fillText(text, size / 2, size / 2)
+
+    const dataUrl = canvas.toDataURL('image/png')
+    this.setIcon(dataUrl)
+  }
+
+  setIcon(icon) {
+    if (!this.allowSend) return
+    this.lastIcon = icon || this.lastIcon
+    if (this.lastIcon) $UD.setBaseDataIcon(this.context, this.lastIcon)
+  }
+
+  add() { this.run() }
+
+  setActive(active) {
+    this.allowSend = true
+    this.setIcon()
+    this.allowSend = active
+  }
+
+  setParams(jsn) {
+    this.settings = { ...this.settings, ...jsn }
+    this.run()
+  }
+
+  clear() { /* clear timers */ }
+}
+```
+
+## Property Inspector Pattern
+
+### inspector.html
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="../../libs/css/udpi.css">
+</head>
+<body>
+  <div class="udpi-wrapper hidden">
+    <form id="property-inspector">
+      <div class="udpi-item">
+        <div class="udpi-item-label" data-localize>Label</div>
+        <select class="udpi-item-value select" name="fieldName">
+          <option value="a">Option A</option>
+          <option value="b">Option B</option>
+        </select>
+      </div>
+    </form>
+  </div>
+  <script src="../../libs/js/constants.js"></script>
+  <script src="../../libs/js/eventEmitter.js"></script>
+  <script src="../../libs/js/timers.js"></script>
+  <script src="../../libs/js/utils.js"></script>
+  <script src="../../libs/js/ulanzideckApi.js"></script>
+  <script src="./inspector.js"></script>
+</body>
+</html>
+```
+
+### inspector.js
+
+```javascript
+let ACTION_SETTING = {}
+let form = ''
+
+$UD.connect('com.ulanzi.ulanzideck.{pluginName}.{actionName}')
+
+$UD.onConnected(conn => {
+  form = document.querySelector('#property-inspector')
+  document.querySelector('.udpi-wrapper').classList.remove('hidden')
+
+  form.addEventListener('input', Utils.debounce(() => {
+    ACTION_SETTING = Utils.getFormValue(form)
+    $UD.sendParamFromPlugin(ACTION_SETTING)
+  }))
+})
+
+$UD.onAdd(jsn => {
+  if (jsn && jsn.param) restoreSettings(jsn.param)
+})
+
+$UD.onParamFromApp(jsn => {
+  if (jsn && jsn.param) restoreSettings(jsn.param)
+})
+
+function restoreSettings(params) {
+  ACTION_SETTING = params
+  Utils.setFormValue(ACTION_SETTING, form)
+}
+```
+
+## Critical Constraints
+
+### CORS
+
+The HTML plugin runs in a WebView that enforces CORS. Only APIs with `Access-Control-Allow-Origin: *` work.
+
+**Known working APIs:**
+- Binance: `https://data-api.binance.vision/api/v3/*`
+- CryptoCompare: `https://min-api.cryptocompare.com/*`
+- manana.kr: `https://api.manana.kr/*`
+- open.er-api.com: `https://open.er-api.com/*`
+
+**Known blocked APIs (no CORS):**
+- Upbit: `https://api.upbit.com/*`
+- Bithumb: `https://api.bithumb.com/*`
+- Dunamu: `https://quotation-api-cdn.dunamu.com/*`
+- CoinGecko: returns 403 when User-Agent is empty (WebView behavior)
+
+To check CORS: `curl -sI "URL" | grep -i "access-control"`
+
+### Font Loading
+
+Remote fonts (`Source Han Sans` from `ulanzistudio.com`) load asynchronously. Canvas renders with system fallback font if drawn before font loads.
+
+**Fix:** Always await `document.fonts.ready` before Canvas drawing:
+```javascript
+async createIcon() {
+  await document.fonts.ready
+  // now draw on canvas
+}
+```
+
+### Canvas Size
+
+LCD key canvas is **196x196 pixels**. All icons must be this size.
+
+### Data Fetching
+
+Use `Utils.fetchData(url)` for GET requests (returns parsed JSON via fetch API).
+Use `Utils.getData(url)` for XHR-based requests (adds timestamp param, 1.5s timeout).
+
+### Debouncing
+
+Always debounce rapid updates (Settings changes, API calls):
+```javascript
+Utils.debounce(fn, 150)  // 150ms default
+```
+
+## Localization
+
+Create JSON files in plugin root: `en.json`, `ko_KR.json`, `zh_CN.json`, etc.
+
+```json
+{
+  "Label Text": "Translated text"
+}
+```
+
+Elements with `data-localize` attribute are auto-translated. Use `$UD.t('key')` in code.
+
+Supported languages: en, zh_CN, zh_HK, de_DE, ja_JP, ko_KR, and more.
+
+## Debugging
+
+- **HTML plugin**: Launch Ulanzi Studio with `--webRemoteDebug` flag, open `localhost:9292`
+- **Node.js plugin**: Launch with `--nodeRemoteDebug`, use Chrome DevTools Inspector
+- **Simulator**: Browser-based test at `http://127.0.0.1:39069` (when Ulanzi Studio is running)
+
+## SDK Library Files
+
+The `libs/` directory is shared across plugins. Copy from any existing plugin:
+- `libs/js/constants.js` - Event type constants
+- `libs/js/eventEmitter.js` - Pub/sub with wildcard support
+- `libs/js/timers.js` - Web Worker based reliable timers
+- `libs/js/utils.js` - HTTP, form, canvas, debounce utilities
+- `libs/js/ulanzideckApi.js` - Main SDK ($UD singleton)
+- `libs/css/udpi.css` - Property Inspector dark theme CSS
+
+**Source:** [UlanziDeckPlugin-SDK](https://github.com/UlanziTechnology/UlanziDeckPlugin-SDK)
+
+## Plugin Installation Path
+
+```
+Windows: %APPDATA%\Ulanzi\UlanziDeck\Plugins\com.ulanzi.{name}.ulanziPlugin\
+macOS:   ~/Library/Application Support/Ulanzi/UlanziDeck/Plugins/com.ulanzi.{name}.ulanziPlugin/
+```
+
+Restart Ulanzi Studio after installing.
+
+## Device Specs
+
+| Device | Layout | Keys |
+|--------|--------|------|
+| D200H | 5x3 | 14 LCD + 13 macro |
+| D200 | 5x3 | 15 LCD |
+| D200X | 5x3 | 15 LCD |
+| Dial | 3x3 | 9 LCD + knob |
