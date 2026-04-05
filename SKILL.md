@@ -436,3 +436,59 @@ Restart Ulanzi Studio after installing.
 | D200 | 5x3 | 15 LCD |
 | D200X | 5x3 | 15 LCD |
 | Dial | 3x3 | 9 LCD + knob |
+
+## Distribution
+
+### Installer (Inno Setup)
+
+For end-user distribution, create a one-click installer using [Inno Setup](https://jrsoftware.org/isinfo.php):
+
+**Setup:**
+1. Copy `templates/installer/setup.iss` to your plugin's `installer/` directory
+2. Edit the `#define` variables at the top:
+   - `MyAppName` - your plugin's display name
+   - `MyAppVersion` - current version
+   - `MyAppPublisher` - your name
+   - `MyAppURL` - project URL
+   - `PluginFolder` - must match `com.ulanzi.{name}.ulanziPlugin`
+3. Generate a unique `AppId` GUID at https://www.guidgenerator.com/
+4. Adjust `[Files]` section to match your plugin's file structure
+5. Add/remove language entries in `[Languages]` as needed
+
+**What the installer does:**
+- Installs plugin files to `%APPDATA%\Ulanzi\UlanziDeck\Plugins\`
+- Detects running Ulanzi Studio and offers to close it
+- Shows "Launch Ulanzi Studio" checkbox on finish screen
+- Supports uninstall via Windows Add/Remove Programs
+
+**Build locally:**
+```bash
+# Install Inno Setup, then:
+iscc installer/setup.iss
+# Output: installer/output/YourPlugin-Setup-x.x.x.exe
+```
+
+### CI/CD (GitHub Actions)
+
+Automate installer builds with the provided workflow template:
+
+1. Copy `templates/.github/workflows/build-installer.yml` to your repo's `.github/workflows/`
+2. On each GitHub Release, the workflow:
+   - Installs Inno Setup on a Windows runner
+   - Compiles the installer
+   - Attaches the `.exe` to the Release assets
+
+Manual trigger is also supported via `workflow_dispatch`.
+
+### Code Signing (Optional)
+
+To eliminate SmartScreen warnings, sign your installer:
+
+- **[SignPath Foundation](https://signpath.org)** - Free EV code signing for OSS projects
+  - Apply at https://signpath.org/apply with your project details
+  - Supports GitHub Actions integration
+  - No personal identification required (project-level certificates)
+- **[Azure Trusted Signing](https://azure.microsoft.com/products/trusted-signing)** - $9.99/month
+- **Sectigo / DigiCert** - Traditional code signing certificates ($70-200/year)
+
+Use [Inno Setup](https://jrsoftware.org/isinfo.php) (not 7-Zip SFX) as the installer framework to minimize antivirus false positives.

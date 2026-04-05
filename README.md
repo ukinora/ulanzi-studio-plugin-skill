@@ -63,6 +63,18 @@ Paste the contents of `SKILL.md` into your AI assistant's system prompt or conte
 - CORS constraints (which APIs work in the WebView, which don't)
 - Font loading fix (async font await before Canvas draw)
 - Localization, debugging, device specs
+- **Distribution: Inno Setup installer + GitHub Actions CI/CD + code signing**
+
+## Templates
+
+The `templates/` directory includes ready-to-use files for plugin distribution:
+
+| File | Description |
+|------|-------------|
+| `templates/installer/setup.iss` | Inno Setup installer script (one-click install for end users) |
+| `templates/.github/workflows/build-installer.yml` | GitHub Actions workflow (auto-build installer on release) |
+
+Copy these into your plugin project and customize the variables at the top.
 
 ## Example prompts
 
