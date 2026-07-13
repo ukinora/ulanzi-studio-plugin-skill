@@ -12,15 +12,18 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Get version from release tag
         id: version
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
-            VERSION="${{ github.event.release.tag_name }}"
-            VERSION="${VERSION#v}"
+            # Route the tag through an env var and keep only [0-9.] so a crafted tag
+            # name cannot inject shell commands into this step or the build step.
+            VERSION=$(printf '%s' "${RELEASE_TAG#v}" | tr -cd '0-9.')
           else
             VERSION="dev"
           fi
@@ -30,16 +33,18 @@ jobs:
         run: choco install innosetup -y
 
       - name: Build Installer
-        run: iscc /DMyAppVersion="${{ steps.version.outputs.version }}" installer/setup.iss
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: iscc /DMyAppVersion="$env:APP_VERSION" installer/setup.iss
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: installer
           path: installer/output/*.exe
 
       - name: Upload to Release
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: installer/output/*.exe
