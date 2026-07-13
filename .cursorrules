@@ -363,6 +363,40 @@ The HTML plugin runs in a WebView that enforces CORS. Only APIs with `Access-Con
 
 To check CORS: `curl -sI "URL" | grep -i "access-control"`
 
+**Workaround - self-hosted CORS relay (Cloudflare Worker):**
+
+A "blocked" API is not a dead end. Proxy it through a tiny Cloudflare Worker that fetches
+server-side (a server context has no CORS) and re-emits the JSON with
+`Access-Control-Allow-Origin: *`. The plugin then calls your Worker instead of the blocked API.
+
+```javascript
+// worker.js - deploy with `wrangler deploy` (free tier: 100k req/day)
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' };
+export default {
+  async fetch(request) {
+    if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
+    const id = new URL(request.url).searchParams.get('id') || '';
+    if (!/^[A-Za-z0-9.\-]{1,16}$/.test(id))               // validate - never proxy arbitrary input
+      return Response.json({ error: 'bad id' }, { status: 400, headers: CORS });
+    const r = await fetch('https://UPSTREAM/api/' + encodeURIComponent(id), {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://UPSTREAM/' },
+    });
+    return new Response(await r.text(),
+      { headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS } });
+  },
+};
+```
+
+- A **fixed upstream host + `encodeURIComponent` + an input whitelist** are mandatory, or the
+  Worker becomes an open proxy / SSRF target. For a public URL add a rate limit or a shared token.
+- Naver Finance realtime quotes (KR/US stocks and indices) *require* this relay - they return
+  `403 Invalid CORS request` on any cross-origin read. Upbit / Bithumb / Dunamu (blocked above)
+  also work through it.
+- If the upstream sits behind Cloudflare and challenges the Worker or `curl` by TLS (JA3)
+  fingerprint, a Node plugin can shell out to
+  [`curl-impersonate`](https://github.com/lexiforest/curl-impersonate)
+  (`--impersonate chrome146 --ca-native`) to mimic a real browser handshake.
+
 ### Font Loading
 
 Remote fonts (`Source Han Sans` from `ulanzistudio.com`) load asynchronously. Canvas renders with system fallback font if drawn before font loads.
@@ -379,10 +413,55 @@ async createIcon() {
 
 LCD key canvas is **196x196 pixels**. All icons must be this size.
 
+### Long Text - Scroll, Don't Shrink
+
+When a label is wider than 196px, shrinking the font to fit quickly becomes unreadable. Keep the
+font size and scroll the text horizontally (marquee). Measure with `ctx.measureText`; if it
+overflows, advance an x-offset each frame and draw a second copy for a seamless wrap:
+
+```javascript
+const w = ctx.measureText(label).width;
+if (w > size) {
+  this.scrollX = (this.scrollX + speed) % (w + GAP);   // speed = px/frame; expose as a PI setting
+  ctx.fillText(label, -this.scrollX, y);
+  ctx.fillText(label, -this.scrollX + w + GAP, y);     // wrap-around copy
+} else {
+  ctx.fillText(label, (size - w) / 2, y);              // fits: center, no scroll
+}
+```
+
+### Flicker-Free Updates
+
+Dynamic keys redraw every few seconds. Drawing a placeholder (`...`, a spinner, "Loading") on
+*every* refresh makes the key visibly flicker.
+
+- Show a loading placeholder **only on the first render** - track a `hasData` flag and stop
+  showing it once you have a value.
+- On a fetch **error**, keep the last good value on screen instead of blanking to `...`; a
+  transient blip should not wipe the key.
+- Only call `setBaseDataIcon` when the rendered output actually changed (compare against
+  `lastIcon`).
+
+```javascript
+async refresh() {
+  let data;
+  try { data = await this.fetch(); }
+  catch { if (this.hasData) return; return this.renderError(); }  // keep last value on error
+  this.hasData = true;
+  this.render(data);
+}
+```
+
 ### Data Fetching
 
 Use `Utils.fetchData(url)` for GET requests (returns parsed JSON via fetch API).
 Use `Utils.getData(url)` for XHR-based requests (adds timestamp param, 1.5s timeout).
+
+**Realtime polling:** drive live data (prices, quotes) from a timer in `libs/js/timers.js` -
+those are Web Worker timers, so they keep firing when the WebView is backgrounded. Match the
+upstream's cadence (e.g. ~5-7s during market hours) instead of hammering it; too fast risks rate
+limits or an IP ban. Keep a source-fallback chain (primary -> secondary) and reuse the last value
+when a poll fails (see Flicker-Free Updates).
 
 ### Debouncing
 
@@ -390,6 +469,25 @@ Always debounce rapid updates (Settings changes, API calls):
 ```javascript
 Utils.debounce(fn, 150)  // 150ms default
 ```
+
+## Security (Plugins That Handle Secrets)
+
+Most tickers are read-only, but any plugin that stores an API key, token, or session cookie must
+treat it as sensitive:
+
+- **Never hardcode API keys** in `actions/*.js` - anyone who installs the plugin (or reads the
+  repo) gets the key. Read it from a Property Inspector field and keep it in the action's settings.
+- **Validate before you shell out.** A Node plugin that passes a user-supplied value into
+  `child_process.exec`, a `.bat`, or PowerShell is a command-injection target. Whitelist it first -
+  `if (!/^[A-Za-z0-9._-]+$/.test(key)) return;` - before it reaches a shell. A crafted value like
+  `x" & calc &` otherwise runs arbitrary commands.
+- **Don't put secrets on the command line.** Process arguments are visible to any local process
+  (`Get-CimInstance Win32_Process`, `tasklist`). Pass secrets through a file or stdin, not
+  `-Key <value>`.
+- **Protect secrets at rest.** A plaintext key file is readable by any process running as the
+  user; prefer OS-native protection (DPAPI on Windows) and tighten the file's ACL. Scraping
+  another app's browser cookies (Chrome DPAPI / App-Bound Encryption) is fragile and breaks
+  across versions - prefer explicit user entry.
 
 ## Localization
 
